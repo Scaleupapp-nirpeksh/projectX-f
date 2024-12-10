@@ -22,6 +22,10 @@ const OrgHomePage = () => {
       return;
     }
 
+    if (orgId) {
+      localStorage.setItem("currentOrgId", orgId);
+    }
+
     const fetchOrganizationDetails = async () => {
       try {
         const response = await fetch(
