@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
+import FieldModal from "./FieldModal"; // Adjust path as needed
+
 import { useNavigate } from "react-router-dom";
 
 const FinanceManagement = () => {
@@ -545,101 +547,48 @@ const FinanceManagement = () => {
           </Modal>
         )}
 
-        {/* Modal for Fields */}
-        {showFieldModal && (
-          <Modal onClose={handleFieldModalClose}>
-            <h2 className="text-xl font-bold mb-4 text-black">{editField ? "Edit Field Definition" : "Add Field Definition"}</h2>
-            <div className="text-black space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Name (unique)</label>
-                <input
-                  type="text"
-                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  value={fieldForm.name}
-                  onChange={(e) => setFieldForm({ ...fieldForm, name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Label</label>
-                <input
-                  type="text"
-                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  value={fieldForm.label}
-                  onChange={(e) => setFieldForm({ ...fieldForm, label: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Type</label>
-                <select
-                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  value={fieldForm.type}
-                  onChange={(e) => setFieldForm({ ...fieldForm, type: e.target.value, options: [], expression: "" })}
-                >
-                  <option value="string">String</option>
-                  <option value="number">Number</option>
-                  <option value="date">Date</option>
-                  <option value="dropdown">Dropdown</option>
-                  <option value="formula">Formula</option>
-                  <option value="boolean">Boolean</option>
-                </select>
-              </div>
+{showFieldModal && (
+  <FieldModal
+    onClose={handleFieldModalClose}
+    onSave={(data, editFieldData) => {
+      // Here you handle saving the field. This callback gives you `data` (the field info) and `editFieldData` (the existing field if editing).
 
-              {fieldForm.type === "dropdown" && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Options</label>
-                  {fieldForm.options.length === 0 && <p className="text-sm text-gray-700 mb-2">No options added yet.</p>}
-                  <ul className="mb-2">
-                    {fieldForm.options.map((opt, i) => (
-                      <li key={i} className="flex items-center justify-between mb-1">
-                        <span className="text-gray-800">{opt}</span>
-                        <button
-                          className="text-red-500 hover:text-red-700 text-sm"
-                          onClick={() => handleRemoveOption(i)}
-                        >
-                          Remove
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition text-sm"
-                    onClick={handleAddOption}
-                  >
-                    Add Option
-                  </button>
-                </div>
-              )}
+      // If editing an existing field:
+      const method = editFieldData ? "PUT" : "POST";
+      const url = editFieldData
+        ? `http://localhost:4000/api/finance/${orgId}/components/finance/fields/${editFieldData._id}`
+        : `http://localhost:4000/api/finance/${orgId}/components/finance/fields`;
 
-              {fieldForm.type === "formula" && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Expression</label>
-                  <textarea
-                    className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    value={fieldForm.expression}
-                    onChange={(e) => setFieldForm({ ...fieldForm, expression: e.target.value })}
-                    placeholder="e.g. amount * tax_rate"
-                  ></textarea>
-                  <p className="text-sm text-gray-600 mt-1">Use field names or IDs in the expression as needed.</p>
-                </div>
-              )}
-            </div>
+      fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(data)
+      })
+      .then(res => res.json())
+      .then(responseData => {
+        if (responseData.field) {
+          if (editFieldData) {
+            setFieldDefinitions(fieldDefinitions.map(f => f._id === editFieldData._id ? responseData.field : f));
+          } else {
+            setFieldDefinitions([...fieldDefinitions, responseData.field]);
+          }
+          handleFieldModalClose();
+        } else {
+          setError(responseData.message || "Failed to save field.");
+        }
+      })
+      .catch((err) => {
+        setError("Error saving field definition.");
+      });
+    }}
+    editField={editField}
+    fields={fieldDefinitions} // If you want to validate formula references
+  />
+)}
 
-            <div className="flex justify-end mt-4 space-x-3 border-t border-gray-200 pt-4">
-              <button
-                className="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 transition"
-                onClick={handleFieldModalClose}
-              >
-                Cancel
-              </button>
-              <button
-                className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700 transition"
-                onClick={handleSaveField}
-              >
-                Save
-              </button>
-            </div>
-          </Modal>
-        )}
 
       </div>
     </Layout>
