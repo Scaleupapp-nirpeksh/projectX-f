@@ -66,13 +66,16 @@ const CategoryModal = ({ onClose, onSave }) => {
 
   return (
     <Modal onClose={onClose}>
-      <div className="p-6 bg-white rounded-lg shadow-lg max-w-lg mx-auto">
-        <h2 className="text-xl font-bold mb-4">Add Category and Sub-Categories</h2>
-        <form className="space-y-4">
-          {error && <p className="text-red-500">{error}</p>}
+      {/* Ensure high contrast with text-black */}
+      <div className="p-6 bg-white rounded-lg shadow-lg max-w-lg mx-auto text-black z-50 relative">
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">
+          Add Category and Sub-Categories
+        </h2>
+        {error && <p className="text-red-600 mb-4 text-sm">{error}</p>}
+        <form className="space-y-6">
           {/* Category Name */}
           <div>
-            <label className="block text-sm font-medium text-white-700 mb-1">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
               Category Name
             </label>
             <input
@@ -86,7 +89,7 @@ const CategoryModal = ({ onClose, onSave }) => {
 
           {/* Sub-Categories */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-semibold text-blue-900 mb-2">
               Sub-Categories
             </label>
             {subCategories.map((subCategory, index) => (
@@ -101,7 +104,7 @@ const CategoryModal = ({ onClose, onSave }) => {
                 {subCategories.length > 1 && (
                   <button
                     type="button"
-                    className="bg-red-500 text-white px-3 py-1 rounded"
+                    className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition"
                     onClick={() => removeSubCategory(index)}
                   >
                     Remove
@@ -111,7 +114,7 @@ const CategoryModal = ({ onClose, onSave }) => {
             ))}
             <button
               type="button"
-              className="bg-blue-500 text-white px-4 py-2 rounded mt-2"
+              className="bg-blue-500 text-white px-4 py-2 rounded mt-2 hover:bg-blue-600 transition"
               onClick={addSubCategory}
             >
               Add Sub-Category
@@ -119,17 +122,17 @@ const CategoryModal = ({ onClose, onSave }) => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex justify-end space-x-2">
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
             <button
               type="button"
-              className="bg-gray-300 px-4 py-2 rounded"
+              className="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 transition"
               onClick={onClose}
             >
               Cancel
             </button>
             <button
               type="button"
-              className="bg-green-500 text-white px-4 py-2 rounded"
+              className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700 transition"
               onClick={handleSave}
             >
               Save
