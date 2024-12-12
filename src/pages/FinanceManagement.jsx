@@ -1,8 +1,9 @@
+// src/pages/FinanceManagement.jsx
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import FieldModal from "./FieldModal"; // Adjust path as needed
-
+import RecordModal from "./RecordModal"; 
 import { useNavigate } from "react-router-dom";
 
 const FinanceManagement = () => {
@@ -13,12 +14,21 @@ const FinanceManagement = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // State for Categories
+  // **New State Variables for Totals**
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [totalExpense, setTotalExpense] = useState(0);
+
+  // **New State Variables for Date Filtering**
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all"); // "all" or category ID
+
+  // Category state
   const [showModal, setShowModal] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: "", subCategories: [""] });
   const [editCategory, setEditCategory] = useState(null);
 
-  // State for Fields
+  // Fields state
   const [showFieldModal, setShowFieldModal] = useState(false);
   const [editField, setEditField] = useState(null);
   const [fieldForm, setFieldForm] = useState({
@@ -29,6 +39,11 @@ const FinanceManagement = () => {
     expression: ""
   });
 
+  // Records
+  const [recordTypeFilter, setRecordTypeFilter] = useState("all"); 
+  // "all", "revenue", "expense"
+  const [showRecordModal, setShowRecordModal] = useState(false);
+
   const token = localStorage.getItem("token");
   const orgId = localStorage.getItem("currentOrgId");
   const navigate = useNavigate();
@@ -38,12 +53,22 @@ const FinanceManagement = () => {
       setError("Organization ID is missing. Redirecting to organization selection...");
       setTimeout(() => navigate("/dashboard"), 3000);
     } else {
-      if (activeTab === "categories") fetchCategories();
-      else if (activeTab === "records") fetchRecords();
-      else if (activeTab === "fields") fetchFieldDefinitions();
+      if (activeTab === "categories") {
+        fetchCategories();
+      } else if (activeTab === "records") {
+        // **Fetch Field Definitions and Records Concurrently**
+        fetchFieldDefinitions()
+          .then(() => fetchRecords())
+          .then(() => computeTotals())
+          .catch(err => setError("Error fetching data for records."));
+      } else if (activeTab === "fields") {
+        fetchFieldDefinitions();
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  // Fetch Categories
   const fetchCategories = async () => {
     if (!orgId) return;
     try {
@@ -62,6 +87,7 @@ const FinanceManagement = () => {
     }
   };
 
+  // Fetch Records
   const fetchRecords = async () => {
     if (!orgId) return;
     try {
@@ -80,6 +106,7 @@ const FinanceManagement = () => {
     }
   };
 
+  // Fetch Field Definitions
   const fetchFieldDefinitions = async () => {
     if (!orgId) return;
     try {
@@ -97,6 +124,58 @@ const FinanceManagement = () => {
       setLoading(false);
     }
   };
+
+  // **Compute Totals**
+  const computeTotals = () => {
+    if (fieldDefinitions.length === 0 || records.length === 0) {
+      setTotalRevenue(0);
+      setTotalExpense(0);
+      return;
+    }
+
+    // **Identify Final Amount Fields for Revenue and Expense**
+    const finalRevenueField = fieldDefinitions.find(
+      f => f.config && f.config.isFinalAmount && (f.applicableTo.includes('revenue') || f.applicableTo.includes('both'))
+    );
+
+    const finalExpenseField = fieldDefinitions.find(
+      f => f.config && f.config.isFinalAmount && (f.applicableTo.includes('expense') || f.applicableTo.includes('both'))
+    );
+
+    let totalRev = 0;
+    let totalExp = 0;
+
+    // **Aggregate Total Revenue**
+    if (finalRevenueField) {
+      records.filter(r => r.type === 'revenue').forEach(r => {
+        const amount = r.fields[finalRevenueField.name]; // Corrected field access
+        if (typeof amount === 'number') {
+          totalRev += amount;
+        }
+      });
+    }
+
+    // **Aggregate Total Expenses**
+    if (finalExpenseField) {
+      records.filter(r => r.type === 'expense').forEach(r => {
+        const amount = r.fields[finalExpenseField.name]; // Corrected field access
+        if (typeof amount === 'number') {
+          totalExp += amount;
+        }
+      });
+    }
+
+    setTotalRevenue(totalRev);
+    setTotalExpense(totalExp);
+  };
+
+  // **Recompute Totals Whenever Records or Field Definitions Change**
+  useEffect(() => {
+    if (activeTab === "records") {
+      computeTotals();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [records, fieldDefinitions]);
 
   // Category Modal Handlers
   const handleModalClose = () => {
@@ -208,56 +287,6 @@ const FinanceManagement = () => {
     });
   };
 
-  const handleSaveField = async () => {
-    if (!fieldForm.name.trim()) {
-      alert("Field name is required.");
-      return;
-    }
-
-    if (fieldForm.type === "dropdown" && fieldForm.options.length === 0) {
-      alert("Options are required for dropdown fields.");
-      return;
-    }
-    if (fieldForm.type === "formula" && !fieldForm.expression.trim()) {
-      alert("Expression is required for formula fields.");
-      return;
-    }
-
-    const method = editField ? "PUT" : "POST";
-    const url = editField
-      ? `http://localhost:4000/api/finance/${orgId}/components/finance/fields/${editField._id}`
-      : `http://localhost:4000/api/finance/${orgId}/components/finance/fields`;
-
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(fieldForm)
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.message || "Failed to save field definition.");
-        return;
-      }
-
-      if (editField) {
-        setFieldDefinitions(
-          fieldDefinitions.map(f => f._id === editField._id ? data.field : f)
-        );
-      } else {
-        setFieldDefinitions([...fieldDefinitions, data.field]);
-      }
-
-      handleFieldModalClose();
-    } catch (err) {
-      setError("Error saving field definition.");
-    }
-  };
-
   const handleDeleteField = async (fieldId) => {
     if (!window.confirm("Are you sure you want to delete this field definition?")) return;
     try {
@@ -291,17 +320,113 @@ const FinanceManagement = () => {
     setShowFieldModal(true);
   };
 
-  const handleAddOption = () => {
-    const option = prompt("Enter a new option:");
-    if (option && option.trim()) {
-      setFieldForm({ ...fieldForm, options: [...fieldForm.options, option.trim()] });
-    }
+  // onSave callback for FieldModal
+  const handleFieldSave = (data, editFieldData) => {
+    const method = editFieldData ? "PUT" : "POST";
+    const url = editFieldData
+      ? `http://localhost:4000/api/finance/${orgId}/components/finance/fields/${editFieldData._id}`
+      : `http://localhost:4000/api/finance/${orgId}/components/finance/fields`;
+
+    fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(responseData => {
+      if (responseData.field) {
+        if (editFieldData) {
+          setFieldDefinitions(fieldDefinitions.map(f => f._id === editFieldData._id ? responseData.field : f));
+        } else {
+          setFieldDefinitions([...fieldDefinitions, responseData.field]);
+        }
+        handleFieldModalClose();
+      } else {
+        setError(responseData.message || "Failed to save field.");
+      }
+    })
+    .catch((err) => {
+      setError("Error saving field definition.");
+    });
   };
 
-  const handleRemoveOption = (index) => {
-    const updated = [...fieldForm.options];
-    updated.splice(index, 1);
-    setFieldForm({ ...fieldForm, options: updated });
+  // Record Modal Handlers
+  const handleRecordModalClose = () => {
+    setShowRecordModal(false);
+  };
+
+  const handleAddRecord = (data) => {
+    // data contains { type, categoryId, fields, recurrence, status, ... }
+  
+    // Make an API call to create the record
+    const url = `http://localhost:4000/api/finance/${orgId}/components/finance/records`;
+  
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(responseData => {
+      if (responseData.record) {
+        // Successfully saved, now update records state
+        setRecords([...records, responseData.record]);
+        setShowRecordModal(false);
+        // **Update Totals**
+        computeTotals();
+      } else {
+        setError(responseData.message || "Failed to save record.");
+      }
+    })
+    .catch((err) => {
+      console.error(err);
+      setError("Error saving record.");
+    });
+  };
+
+  // **Filtered records based on recordTypeFilter, Category, and Date Range**
+  const filteredRecords = records.filter((record) => {
+    // **Filter by Record Type**
+    if (recordTypeFilter !== "all" && record.type !== recordTypeFilter) return false;
+
+    // **Filter by Category**
+    if (selectedCategory !== "all" && record.categoryId !== selectedCategory) return false;
+
+    // **Filter by Date Range**
+    if (fromDate) {
+      const recordDate = new Date(record.fields.Date); // Corrected casing
+      const startDate = new Date(fromDate);
+      if (recordDate < startDate) return false;
+    }
+
+    if (toDate) {
+      const recordDate = new Date(record.fields.Date); // Corrected casing
+      const endDate = new Date(toDate);
+      // To include the 'toDate', set the time to end of the day
+      endDate.setHours(23, 59, 59, 999);
+      if (recordDate > endDate) return false;
+    }
+
+    return true;
+  });
+
+  // **Helper Function to Format Currency in Rupees**
+  const formatRupee = (amount) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  };
+
+  // **Helper Function to Format Date**
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "-";
+    const date = new Date(dateStr);
+    if (isNaN(date)) return "-";
+    return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: '2-digit' }).format(date);
   };
 
   return (
@@ -414,6 +539,168 @@ const FinanceManagement = () => {
           </div>
         )}
 
+        {activeTab === "records" && (
+          <div className="bg-white text-black p-6 rounded-lg shadow-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">Records</h2>
+              <button
+                className="bg-green-600 px-4 py-2 rounded text-white font-semibold hover:bg-green-700 transition"
+                onClick={() => setShowRecordModal(true)}
+              >
+                Add Record
+              </button>
+            </div>
+
+            {/* **Display Total Revenue and Total Expenses** */}
+            <div className="flex justify-between mb-6">
+              <div className="bg-blue-100 p-4 rounded-lg shadow">
+                <h3 className="text-lg font-semibold">Total Revenue</h3>
+                <p className="text-2xl font-bold">{formatRupee(totalRevenue)}</p>
+              </div>
+              <div className="bg-red-100 p-4 rounded-lg shadow">
+                <h3 className="text-lg font-semibold">Total Expenses</h3>
+                <p className="text-2xl font-bold">{formatRupee(totalExpense)}</p>
+              </div>
+            </div>
+
+            {/* **Combined Filter Section** */}
+            <div className="flex flex-col md:flex-row md:space-x-4 mb-4">
+              {/* Date Filters */}
+              <div className="flex flex-col mb-4 md:mb-0">
+                <label className="block text-sm font-semibold mb-1">From Date</label>
+                <input
+                  type="date"
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col mb-4 md:mb-0">
+                <label className="block text-sm font-semibold mb-1">To Date</label>
+                <input
+                  type="date"
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                />
+              </div>
+              {/* Category Filter */}
+              <div className="flex flex-col mb-4 md:mb-0">
+                <label className="block text-sm font-semibold mb-1">Filter by Category</label>
+                <select
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                >
+                  <option value="all">All Categories</option>
+                  {categories.map((category) => (
+                    <option key={category._id} value={category._id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* **Clear Filters Button** */}
+            <div className="flex space-x-4 mb-4">
+              <button
+                className="px-3 py-1 rounded bg-gray-200 text-black hover:bg-gray-300"
+                onClick={() => {
+                  setFromDate("");
+                  setToDate("");
+                  setRecordTypeFilter("all");
+                  setSelectedCategory("all");
+                }}
+              >
+                Clear All Filters
+              </button>
+            </div>
+
+            {/* Record Filters: All | Revenue | Expense */}
+            <div className="flex flex-col md:flex-row md:space-x-4 mb-4">
+              <div className="flex space-x-4 mb-4 md:mb-0">
+                <button
+                  className={`px-3 py-1 rounded ${
+                    recordTypeFilter === "all" ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
+                  }`}
+                  onClick={() => setRecordTypeFilter("all")}
+                >
+                  All
+                </button>
+                <button
+                  className={`px-3 py-1 rounded ${
+                    recordTypeFilter === "revenue" ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
+                  }`}
+                  onClick={() => setRecordTypeFilter("revenue")}
+                >
+                  Revenue
+                </button>
+                <button
+                  className={`px-3 py-1 rounded ${
+                    recordTypeFilter === "expense" ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
+                  }`}
+                  onClick={() => setRecordTypeFilter("expense")}
+                >
+                  Expense
+                </button>
+              </div>
+            </div>
+
+            {filteredRecords.length === 0 ? (
+              <p className="text-gray-700">No records found for this filter.</p>
+            ) : (
+              <table className="table-auto w-full bg-white text-black rounded-lg">
+                <thead>
+                  <tr className="bg-gray-200 text-left">
+                    <th className="px-4 py-2 border font-semibold">Type</th>
+                    <th className="px-4 py-2 border font-semibold">Category</th>
+                    <th className="px-4 py-2 border font-semibold">Status</th>
+                    <th className="px-4 py-2 border font-semibold">Date</th> {/* **Added Date Column** */}
+                    <th className="px-4 py-2 border font-semibold">Amount</th>
+                    <th className="px-4 py-2 border font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((record) => {
+                    // **Identify the Final Amount Field for Each Record**
+                    const finalAmountField = fieldDefinitions.find(
+                      f => f.config && f.config.isFinalAmount && (f.applicableTo.includes(record.type) || f.applicableTo.includes('both'))
+                    );
+                    const amount = finalAmountField ? record.fields[finalAmountField.name] : 0; // Corrected field access
+
+                    return (
+                      <tr key={record._id} className="border-t hover:bg-gray-100 transition">
+                        <td className="px-4 py-2 border align-top capitalize">{record.type}</td>
+                        <td className="px-4 py-2 border align-top">
+                          {categories.find(cat => cat._id === record.categoryId)?.name || "-"}
+                        </td>
+                        <td className="px-4 py-2 border align-top capitalize">{record.status}</td>
+                        <td className="px-4 py-2 border align-top">
+                          {formatDate(record.fields.Date)} {/* **Display Date** */}
+                        </td>
+                        <td className="px-4 py-2 border align-top">
+                          {typeof amount === 'number' ? formatRupee(amount) : "-"}
+                        </td>
+                        <td className="px-4 py-2 border align-top">
+                          <div className="flex space-x-4">
+                            <button className="text-blue-600 hover:text-blue-800 font-semibold">
+                              ✏️ Edit
+                            </button>
+                            <button className="text-red-600 hover:text-red-800 font-semibold">
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
         {activeTab === "fields" && (
           <div className="bg-white text-black p-6 rounded-lg shadow-lg">
             <div className="flex justify-between items-center mb-4">
@@ -463,6 +750,10 @@ const FinanceManagement = () => {
                         {["string", "number", "date", "boolean"].includes(field.type) && (
                           <span className="text-sm text-gray-700">No extra details</span>
                         )}
+                        {/* **Display if Field is Final Amount** */}
+                        {field.config && field.config.isFinalAmount && (
+                          <p className="text-sm text-green-600 mt-1">Final Amount Field</p>
+                        )}
                       </td>
                       <td className="px-4 py-2 border align-top">
                         <div className="flex space-x-4">
@@ -491,108 +782,100 @@ const FinanceManagement = () => {
         {/* Modal for Categories */}
         {showModal && (
           <Modal onClose={handleModalClose}>
-            <h2 className="text-xl font-bold mb-4 text-black">
-              {editCategory ? "Edit Category" : "Add Category"}
-            </h2>
-            <div className="text-black">
-              <label className="block text-sm font-medium mb-2">Category Name</label>
-              <input
-                type="text"
-                className="w-full p-2 border rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                value={categoryForm.name}
-                onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-              />
+            <div className="p-6 bg-white rounded-lg shadow-lg max-w-lg mx-auto text-black z-50 relative">
+              <h2 className="text-xl font-bold mb-4">
+                {editCategory ? "Edit Category" : "Add Category"}
+              </h2>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Category Name</label>
+                <input
+                  type="text"
+                  className="w-full p-2 border rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                />
 
-              <label className="block text-sm font-medium mb-2">Sub-Categories</label>
-              {categoryForm.subCategories.map((sub, index) => (
-                <div key={index} className="flex items-center mb-2 space-x-2">
-                  <input
-                    type="text"
-                    className="flex-grow p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    value={sub}
-                    onChange={(e) => handleSubCategoryChange(index, e.target.value)}
-                  />
-                  {categoryForm.subCategories.length > 1 && (
-                    <button
-                      className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition"
-                      onClick={() => removeSubCategoryField(index)}
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button
-                className="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition font-semibold"
-                onClick={addSubCategoryField}
-              >
-                Add Sub-Category
-              </button>
-            </div>
+                <label className="block text-sm font-semibold mb-2">Sub-Categories</label>
+                {categoryForm.subCategories.map((sub, index) => (
+                  <div key={index} className="flex items-center mb-2 space-x-2">
+                    <input
+                      type="text"
+                      className="flex-grow p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      value={sub}
+                      onChange={(e) => handleSubCategoryChange(index, e.target.value)}
+                    />
+                    {categoryForm.subCategories.length > 1 && (
+                      <button
+                        className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition"
+                        onClick={() => removeSubCategoryField(index)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  className="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition font-semibold"
+                  onClick={addSubCategoryField}
+                >
+                  Add Sub-Category
+                </button>
+              </div>
 
-            <div className="flex justify-end mt-4 space-x-3 border-t border-gray-200 pt-4">
-              <button
-                className="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 transition"
-                onClick={handleModalClose}
-              >
-                Cancel
-              </button>
-              <button
-                className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700 transition"
-                onClick={handleAddOrUpdateCategory}
-              >
-                Save
-              </button>
+              <div className="flex justify-end mt-4 space-x-3 border-t border-gray-200 pt-4">
+                <button
+                  className="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 transition"
+                  onClick={handleModalClose}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700 transition"
+                  onClick={handleAddOrUpdateCategory}
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </Modal>
         )}
 
-{showFieldModal && (
-  <FieldModal
-    onClose={handleFieldModalClose}
-    onSave={(data, editFieldData) => {
-      // Here you handle saving the field. This callback gives you `data` (the field info) and `editFieldData` (the existing field if editing).
+        {/* Field Modal */}
+        {showFieldModal && (
+          <FieldModal
+            onClose={handleFieldModalClose}
+            onSave={handleFieldSave}
+            editField={editField}
+            fields={fieldDefinitions}
+          />
+        )}
 
-      // If editing an existing field:
-      const method = editFieldData ? "PUT" : "POST";
-      const url = editFieldData
-        ? `http://localhost:4000/api/finance/${orgId}/components/finance/fields/${editFieldData._id}`
-        : `http://localhost:4000/api/finance/${orgId}/components/finance/fields`;
-
-      fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(data)
-      })
-      .then(res => res.json())
-      .then(responseData => {
-        if (responseData.field) {
-          if (editFieldData) {
-            setFieldDefinitions(fieldDefinitions.map(f => f._id === editFieldData._id ? responseData.field : f));
-          } else {
-            setFieldDefinitions([...fieldDefinitions, responseData.field]);
-          }
-          handleFieldModalClose();
-        } else {
-          setError(responseData.message || "Failed to save field.");
-        }
-      })
-      .catch((err) => {
-        setError("Error saving field definition.");
-      });
-    }}
-    editField={editField}
-    fields={fieldDefinitions} // If you want to validate formula references
-  />
-)}
-
+        {/* Record Modal */}
+        {showRecordModal && (
+          <RecordModal
+            onClose={handleRecordModalClose}
+            onSave={handleAddRecord}
+            categories={categories} // Pass categories if needed
+            fields={fieldDefinitions} // Pass fields if needed
+          />
+        )}
 
       </div>
     </Layout>
   );
+};
+
+// **Helper Function to Format Currency in Rupees**
+const formatRupee = (amount) => {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+};
+
+// **Helper Function to Format Date**
+const formatDate = (dateStr) => {
+  if (!dateStr) return "-";
+  const date = new Date(dateStr);
+  if (isNaN(date)) return "-";
+  return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: '2-digit' }).format(date);
 };
 
 export default FinanceManagement;

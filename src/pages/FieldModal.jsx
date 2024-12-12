@@ -10,7 +10,14 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
     type: "string",
     options: [],
     expression: "",
-    newOption: ""
+    newOption: "",
+    // New properties for applicability and config
+    applicableTo: ["both"], // could be ["revenue", "expense", "both"]
+    config: {
+      isFinalAmount: false,
+      isTotalPaymentField: false,
+      isAmountPaidField: false,
+    }
   });
   const [selectedFieldForFormula, setSelectedFieldForFormula] = useState("");
 
@@ -23,7 +30,13 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
         type: editField.type,
         options: editField.options || [],
         expression: editField.expression || "",
-        newOption: ""
+        newOption: "",
+        applicableTo: editField.applicableTo || ["both"],
+        config: {
+          isFinalAmount: editField.config?.isFinalAmount || false,
+          isTotalPaymentField: editField.config?.isTotalPaymentField || false,
+          isAmountPaidField: editField.config?.isAmountPaidField || false,
+        }
       });
     }
   }, [editField]);
@@ -62,12 +75,20 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
 
     if (!validateFormulaFields()) return;
 
+    // Construct the data object for saving
     const data = {
       name: fieldForm.name.trim(),
       label: fieldForm.label.trim(),
       type: fieldForm.type,
       options: fieldForm.options,
-      expression: fieldForm.expression.trim()
+      expression: fieldForm.expression.trim() || null,
+      // Include applicableTo and config
+      applicableTo: fieldForm.applicableTo,
+      config: {
+        isFinalAmount: fieldForm.config.isFinalAmount,
+        isTotalPaymentField: fieldForm.config.isTotalPaymentField,
+        isAmountPaidField: fieldForm.config.isAmountPaidField,
+      }
     };
 
     onSave(data, editField);
@@ -120,8 +141,27 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
     const after = fieldForm.expression.substring(end);
     const newExpression = before + selectedFieldForFormula + after;
 
-    setFieldForm({ ...fieldForm, expression: newExpression }, validateFormulaFields);
+    setFieldForm({ ...fieldForm, expression: newExpression });
+    validateFormulaFields();
     setSelectedFieldForFormula("");
+  };
+
+  // Handle changes to applicableTo and config flags
+  const handleApplicableChange = (value) => {
+    // value could be "expense", "revenue", "both"
+    // If you want a multi-select, adapt this logic
+    // Here we assume a radio button for simplicity
+    setFieldForm({...fieldForm, applicableTo: [value] });
+  };
+
+  const handleConfigChange = (key, checked) => {
+    setFieldForm(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        [key]: checked
+      }
+    }));
   };
 
   return (
@@ -159,7 +199,7 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
               type="text"
               value={fieldForm.label}
               onChange={(e) => setFieldForm({ ...fieldForm, label: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
               placeholder="e.g. Invoice Number"
             />
             <p className="text-gray-600 text-sm mt-1">
@@ -173,7 +213,7 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
               Type
             </label>
             <select
-              className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
               value={fieldForm.type}
               onChange={(e) => setFieldForm({
                 ...fieldForm,
@@ -193,13 +233,88 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
             <p className="text-gray-600 text-sm mt-1">{renderTypeHelp()}</p>
           </div>
 
+          {/* Applicable To */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Applicable To
+            </label>
+            <div className="space-x-4 text-sm">
+              <label>
+                <input
+                  type="radio"
+                  className="mr-1"
+                  checked={fieldForm.applicableTo.includes('both')}
+                  onChange={() => handleApplicableChange('both')}
+                />
+                Both
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  className="mr-1"
+                  checked={fieldForm.applicableTo.includes('revenue')}
+                  onChange={() => handleApplicableChange('revenue')}
+                />
+                Revenue Only
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  className="mr-1"
+                  checked={fieldForm.applicableTo.includes('expense')}
+                  onChange={() => handleApplicableChange('expense')}
+                />
+                Expense Only
+              </label>
+            </div>
+            <p className="text-gray-600 text-sm mt-1">
+              Choose if this field applies to revenue, expense, or both record types.
+            </p>
+          </div>
+
+          {/* Config Checkboxes */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Special Configurations
+            </label>
+            <div className="space-y-2 text-sm">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={fieldForm.config.isFinalAmount}
+                  onChange={(e) => handleConfigChange('isFinalAmount', e.target.checked)}
+                />
+                Final Amount Field (Represents the final computed amount)
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={fieldForm.config.isTotalPaymentField}
+                  onChange={(e) => handleConfigChange('isTotalPaymentField', e.target.checked)}
+                />
+                Total Payment Field (Represents total amount to be received/paid)
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={fieldForm.config.isAmountPaidField}
+                  onChange={(e) => handleConfigChange('isAmountPaidField', e.target.checked)}
+                />
+                Amount Paid Field (Represents amount already paid/received)
+              </label>
+            </div>
+          </div>
+
           {/* Dropdown Options */}
           {fieldForm.type === "dropdown" && (
             <div className="bg-blue-50 p-4 rounded border border-blue-200">
               <h3 className="text-sm font-semibold mb-2">Dropdown Choices</h3>
               {fieldForm.options.length === 0 && (
                 <p className="text-sm text-gray-700 mb-2">
-                  Add at least one choice, e.g. "Paid", "Pending".
+                  Add at least one choice.
                 </p>
               )}
               <ul className="mb-2 text-sm">
@@ -221,7 +336,7 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
                   value={fieldForm.newOption}
                   onChange={(e) => setFieldForm({ ...fieldForm, newOption: e.target.value })}
                   placeholder="Add a choice..."
-                  className="flex-grow px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-400"
+                  className="flex-grow p-2 border rounded focus:ring-2 focus:ring-blue-400"
                 />
                 <button
                   className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
@@ -239,7 +354,7 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
               <h3 className="text-sm font-semibold mb-2">Formula Expression</h3>
               <textarea
                 ref={formulaTextareaRef}
-                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                 value={fieldForm.expression}
                 onChange={(e) => {
                   setFieldForm({ ...fieldForm, expression: e.target.value });
@@ -248,15 +363,14 @@ const FieldModal = ({ onClose, onSave, editField, fields }) => {
                 placeholder="e.g. amount * tax_rate"
               ></textarea>
               <p className="text-sm text-gray-600 mt-1">
-                Use other field Names here. Example: "amount * tax_rate". Ensure those fields exist.
+                Use other field Names. Example: "amount * tax_rate".
               </p>
-
               {fields && fields.length > 0 && (
                 <div className="mt-2 text-sm">
                   <strong>Available Fields:</strong>
                   <div className="flex items-center space-x-2 mt-1">
                     <select
-                      className="p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-400"
+                      className="p-2 border rounded focus:ring-2 focus:ring-blue-400"
                       value={selectedFieldForFormula}
                       onChange={(e) => setSelectedFieldForFormula(e.target.value)}
                     >
