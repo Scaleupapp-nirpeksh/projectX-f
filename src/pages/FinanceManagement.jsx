@@ -14,11 +14,11 @@ const FinanceManagement = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // **New State Variables for Totals**
+  // State Variables for Totals
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [totalExpense, setTotalExpense] = useState(0);
 
-  // **New State Variables for Date Filtering**
+  // State Variables for Date Filtering
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all"); // "all" or category ID
@@ -44,11 +44,40 @@ const FinanceManagement = () => {
   // "all", "revenue", "expense"
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [editRecord, setEditRecord] = useState(null); // Record being edited
-const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Control modal visibility
+  const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Control modal visibility
 
   const token = localStorage.getItem("token");
   const orgId = localStorage.getItem("currentOrgId");
   const navigate = useNavigate();
+
+  // Filtered records based on recordTypeFilter, Category, and Date Range
+  const filteredRecords = records.filter((record) => {
+    // Filter by Record Type
+    if (recordTypeFilter !== "all" && record.type !== recordTypeFilter) return false;
+
+    // Filter by Category
+    if (selectedCategory !== "all" && record.categoryId !== selectedCategory) return false;
+
+    // Filter by Date Range
+    if (fromDate) {
+      const recordDate = new Date(record.fields.Date); // Ensure lowercase 'date'
+      const startDate = new Date(fromDate);
+      if (recordDate < startDate) return false;
+    }
+
+    if (toDate) {
+      const recordDate = new Date(record.fields.Date); // Ensure lowercase 'date'
+      const endDate = new Date(toDate);
+      // To include the 'toDate', set the time to end of the day
+      endDate.setHours(23, 59, 59, 999);
+      if (recordDate > endDate) return false;
+    }
+
+    return true;
+  });
+
+  // Compute Profit/Loss
+  const profitLoss = totalRevenue - totalExpense;
 
   useEffect(() => {
     if (!orgId) {
@@ -58,10 +87,8 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
       if (activeTab === "categories") {
         fetchCategories();
       } else if (activeTab === "records") {
-        // **Fetch Field Definitions and Records Concurrently**
-        fetchFieldDefinitions()
-          .then(() => fetchRecords())
-          .then(() => computeTotals())
+        // Fetch Field Definitions and Records Concurrently
+        Promise.all([fetchFieldDefinitions(), fetchRecords()])
           .catch(err => setError("Error fetching data for records."));
       } else if (activeTab === "fields") {
         fetchFieldDefinitions();
@@ -127,15 +154,15 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
     }
   };
 
-  // **Compute Totals**
-  const computeTotals = () => {
-    if (fieldDefinitions.length === 0 || records.length === 0) {
+  // Compute Totals based on filtered records
+  const computeTotals = (recordsToCompute) => {
+    if (fieldDefinitions.length === 0 || recordsToCompute.length === 0) {
       setTotalRevenue(0);
       setTotalExpense(0);
       return;
     }
 
-    // **Identify Final Amount Fields for Revenue and Expense**
+    // Identify Final Amount Fields for Revenue and Expense
     const finalRevenueField = fieldDefinitions.find(
       f => f.config && f.config.isFinalAmount && (f.applicableTo.includes('revenue') || f.applicableTo.includes('both'))
     );
@@ -147,20 +174,20 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
     let totalRev = 0;
     let totalExp = 0;
 
-    // **Aggregate Total Revenue**
+    // Aggregate Total Revenue
     if (finalRevenueField) {
-      records.filter(r => r.type === 'revenue').forEach(r => {
-        const amount = r.fields[finalRevenueField.name]; // Corrected field access
+      recordsToCompute.filter(r => r.type === 'revenue').forEach(r => {
+        const amount = r.fields[finalRevenueField.name];
         if (typeof amount === 'number') {
           totalRev += amount;
         }
       });
     }
 
-    // **Aggregate Total Expenses**
+    // Aggregate Total Expenses
     if (finalExpenseField) {
-      records.filter(r => r.type === 'expense').forEach(r => {
-        const amount = r.fields[finalExpenseField.name]; // Corrected field access
+      recordsToCompute.filter(r => r.type === 'expense').forEach(r => {
+        const amount = r.fields[finalExpenseField.name];
         if (typeof amount === 'number') {
           totalExp += amount;
         }
@@ -171,8 +198,13 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
     setTotalExpense(totalExp);
   };
 
-
-  // Inside FinanceManagement component
+  // Recompute Totals Whenever filteredRecords or Field Definitions Change
+  useEffect(() => {
+    if (activeTab === "records") {
+      computeTotals(filteredRecords);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRecords, fieldDefinitions, activeTab]);
 
   // Handle Edit Record
   const handleEditRecord = (record) => {
@@ -200,10 +232,12 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
       if (response.ok) {
         // Update the record in the state
         setRecords(records.map(r => r._id === data.record._id ? data.record : r));
-        // Recompute totals
-        computeTotals();
+        // Recompute totals based on updated records
+        computeTotals(filteredRecords);
         // Close the modal
         setShowEditRecordModal(false);
+        // Optionally, display a success message
+        alert("Record updated successfully.");
       } else {
         setError(data.message || "Failed to update the record.");
       }
@@ -235,8 +269,10 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
       if (response.ok) {
         // Remove the deleted record from the state
         setRecords(records.filter((record) => record._id !== recordId));
-        // Recompute totals
-        computeTotals();
+        // Recompute totals based on updated records
+        computeTotals(filteredRecords);
+        // Optionally, display a success message
+        alert("Record deleted successfully.");
       } else {
         setError(data.message || "Failed to delete the record.");
       }
@@ -246,16 +282,6 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
       setLoading(false);
     }
   };
-
-
-
-  // **Recompute Totals Whenever Records or Field Definitions Change**
-  useEffect(() => {
-    if (activeTab === "records") {
-      computeTotals();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, fieldDefinitions]);
 
   // Category Modal Handlers
   const handleModalClose = () => {
@@ -303,6 +329,8 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
       }
 
       handleModalClose();
+      // Optionally, display a success message
+      alert("Category saved successfully.");
     } catch (err) {
       setError("Error saving category.");
     }
@@ -325,6 +353,8 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
       }
 
       setCategories(categories.filter((category) => category._id !== categoryId));
+      // Optionally, display a success message
+      alert("Category deleted successfully.");
     } catch (err) {
       setError("Error deleting category.");
     }
@@ -383,6 +413,8 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
         return;
       }
       setFieldDefinitions(fieldDefinitions.filter(f => f._id !== fieldId));
+      // Optionally, display a success message
+      alert("Field definition deleted successfully.");
     } catch (err) {
       setError("Error deleting field definition.");
     }
@@ -424,6 +456,8 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
           setFieldDefinitions([...fieldDefinitions, responseData.field]);
         }
         handleFieldModalClose();
+        // Optionally, display a success message
+        alert("Field definition saved successfully.");
       } else {
         setError(responseData.message || "Failed to save field.");
       }
@@ -440,10 +474,10 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
 
   const handleAddRecord = (data) => {
     // data contains { type, categoryId, fields, recurrence, status, ... }
-  
+
     // Make an API call to create the record
     const url = `http://localhost:4000/api/finance/${orgId}/components/finance/records`;
-  
+
     fetch(url, {
       method: "POST",
       headers: {
@@ -458,8 +492,10 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
         // Successfully saved, now update records state
         setRecords([...records, responseData.record]);
         setShowRecordModal(false);
-        // **Update Totals**
-        computeTotals();
+        // Update Totals based on new record
+        computeTotals(filteredRecords);
+        // Optionally, display a success message
+        alert("Record added successfully.");
       } else {
         setError(responseData.message || "Failed to save record.");
       }
@@ -470,38 +506,16 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
     });
   };
 
-  // **Filtered records based on recordTypeFilter, Category, and Date Range**
-  const filteredRecords = records.filter((record) => {
-    // **Filter by Record Type**
-    if (recordTypeFilter !== "all" && record.type !== recordTypeFilter) return false;
+  // Handle Update Record (Already Provided Above)
 
-    // **Filter by Category**
-    if (selectedCategory !== "all" && record.categoryId !== selectedCategory) return false;
+  // Handle Delete Record (Already Provided Above)
 
-    // **Filter by Date Range**
-    if (fromDate) {
-      const recordDate = new Date(record.fields.Date); // Corrected casing
-      const startDate = new Date(fromDate);
-      if (recordDate < startDate) return false;
-    }
-
-    if (toDate) {
-      const recordDate = new Date(record.fields.Date); // Corrected casing
-      const endDate = new Date(toDate);
-      // To include the 'toDate', set the time to end of the day
-      endDate.setHours(23, 59, 59, 999);
-      if (recordDate > endDate) return false;
-    }
-
-    return true;
-  });
-
-  // **Helper Function to Format Currency in Rupees**
+  // Helper Function to Format Currency in Rupees
   const formatRupee = (amount) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
   };
 
-  // **Helper Function to Format Date**
+  // Helper Function to Format Date
   const formatDate = (dateStr) => {
     if (!dateStr) return "-";
     const date = new Date(dateStr);
@@ -518,7 +532,15 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
         </p>
 
         {error && <p className="text-red-500 text-center mb-4">{error}</p>}
-        {loading && <p className="text-white text-center mb-4">Loading...</p>}
+        {loading && (
+          <div className="flex justify-center items-center mb-4">
+            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            <span className="ml-2">Loading...</span>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex justify-center space-x-6 mb-8">
@@ -554,6 +576,7 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
           </button>
         </div>
 
+        {/* Categories Tab */}
         {activeTab === "categories" && (
           <div className="bg-white text-black p-6 rounded-lg shadow-lg">
             <div className="flex justify-between items-center mb-4">
@@ -619,6 +642,7 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
           </div>
         )}
 
+        {/* Records Tab */}
         {activeTab === "records" && (
           <div className="bg-white text-black p-6 rounded-lg shadow-lg">
             <div className="flex justify-between items-center mb-4">
@@ -631,19 +655,39 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
               </button>
             </div>
 
-            {/* **Display Total Revenue and Total Expenses** */}
-            <div className="flex justify-between mb-6">
-              <div className="bg-blue-100 p-4 rounded-lg shadow">
+            {/* Display Total Revenue, Total Expenses, and Profit/Loss */}
+            <div className="flex flex-wrap justify-between mb-6">
+              {/* Total Revenue */}
+              <div className="bg-blue-100 p-4 rounded-lg shadow w-full md:w-1/3 mb-4 md:mb-0">
                 <h3 className="text-lg font-semibold">Total Revenue</h3>
                 <p className="text-2xl font-bold">{formatRupee(totalRevenue)}</p>
               </div>
-              <div className="bg-red-100 p-4 rounded-lg shadow">
+
+              {/* Total Expenses */}
+              <div className="bg-orange-100 p-4 rounded-lg shadow w-full md:w-1/3 mb-4 md:mb-0">
                 <h3 className="text-lg font-semibold">Total Expenses</h3>
-                <p className="text-2xl font-bold">{formatRupee(totalExpense)}</p>
+                <p className="text-2xl font-bold text-orange-600">{formatRupee(totalExpense)}</p>
+              </div>
+
+              {/* Profit/Loss */}
+              <div
+                className={`p-4 rounded-lg shadow w-full md:w-1/3 ${
+                  profitLoss >= 0 ? "bg-green-100" : "bg-red-100"
+                }`}
+              >
+                <h3 className="text-lg font-semibold">Profit/Loss</h3>
+                <p
+                  className={`text-2xl font-bold ${
+                    profitLoss >= 0 ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {profitLoss >= 0 ? "+" : "-"}
+                  {formatRupee(Math.abs(profitLoss))}
+                </p>
               </div>
             </div>
 
-            {/* **Combined Filter Section** */}
+            {/* Combined Filter Section */}
             <div className="flex flex-col md:flex-row md:space-x-4 mb-4">
               {/* Date Filters */}
               <div className="flex flex-col mb-4 md:mb-0">
@@ -682,7 +726,7 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
               </div>
             </div>
 
-            {/* **Clear Filters Button** */}
+            {/* Clear Filters Button */}
             <div className="flex space-x-4 mb-4">
               <button
                 className="px-3 py-1 rounded bg-gray-200 text-black hover:bg-gray-300"
@@ -736,61 +780,59 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
                     <th className="px-4 py-2 border font-semibold">Type</th>
                     <th className="px-4 py-2 border font-semibold">Category</th>
                     <th className="px-4 py-2 border font-semibold">Status</th>
-                    <th className="px-4 py-2 border font-semibold">Date</th> {/* **Added Date Column** */}
+                    <th className="px-4 py-2 border font-semibold">Date</th> {/* Added Date Column */}
                     <th className="px-4 py-2 border font-semibold">Amount</th>
                     <th className="px-4 py-2 border font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-  {filteredRecords.map((record) => {
-    // Identify the Final Amount Field for Each Record
-    const finalAmountField = fieldDefinitions.find(
-      f => f.config && f.config.isFinalAmount && (f.applicableTo.includes(record.type) || f.applicableTo.includes('both'))
-    );
-    const amount = finalAmountField ? record.fields[finalAmountField.name] : 0;
+                  {filteredRecords.map((record) => {
+                    // Identify the Final Amount Field for Each Record
+                    const finalAmountField = fieldDefinitions.find(
+                      f => f.config && f.config.isFinalAmount && (f.applicableTo.includes(record.type) || f.applicableTo.includes('both'))
+                    );
+                    const amount = finalAmountField ? record.fields[finalAmountField.name] : 0;
 
-    return (
-      <tr key={record._id} className="border-t hover:bg-gray-100 transition">
-        <td className="px-4 py-2 border align-top capitalize">{record.type}</td>
-        <td className="px-4 py-2 border align-top">
-          {categories.find(cat => cat._id === record.categoryId)?.name || "-"}
-        </td>
-        <td className="px-4 py-2 border align-top capitalize">{record.status}</td>
-        <td className="px-4 py-2 border align-top">
-          {formatDate(record.fields.Date)}
-        </td>
-        <td className="px-4 py-2 border align-top">
-          {typeof amount === 'number' ? formatRupee(amount) : "-"}
-        </td>
-        <td className="px-4 py-2 border align-top">
-          <div className="flex space-x-4">
-          <button
-            className="text-blue-600 hover:text-blue-800 font-semibold"
-            onClick={() => handleEditRecord(record)}
-          >
-            ✏️ Edit
-          </button>
-
-            <button
-              className="text-red-600 hover:text-red-800 font-semibold"
-              onClick={() => handleDeleteRecord(record._id)} // Updated
-            >
-              🗑️ Delete
-            </button>
-          </div>
-        </td>
-      </tr>
-    );
-  })}
-</tbody>
-
+                    return (
+                      <tr key={record._id} className="border-t hover:bg-gray-100 transition">
+                        <td className="px-4 py-2 border align-top capitalize">{record.type}</td>
+                        <td className="px-4 py-2 border align-top">
+                          {categories.find(cat => cat._id === record.categoryId)?.name || "-"}
+                        </td>
+                        <td className="px-4 py-2 border align-top capitalize">{record.status}</td>
+                        <td className="px-4 py-2 border align-top">
+                          {formatDate(record.fields.Date)} {/* Ensure lowercase 'date' */}
+                        </td>
+                        <td className="px-4 py-2 border align-top">
+                          {typeof amount === 'number' ? formatRupee(amount) : "-"}
+                        </td>
+                        <td className="px-4 py-2 border align-top">
+                          <div className="flex space-x-4">
+                            <button
+                              className="text-blue-600 hover:text-blue-800 font-semibold"
+                              onClick={() => handleEditRecord(record)}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              className="text-red-600 hover:text-red-800 font-semibold"
+                              onClick={() => handleDeleteRecord(record._id)}
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
               </table>
             )}
           </div>
         )}
 
-              {/* Edit Record Modal */}
-              {showEditRecordModal && (
+        {/* Edit Record Modal */}
+        {showEditRecordModal && (
           <RecordModal
             onClose={() => {
               setShowEditRecordModal(false);
@@ -803,6 +845,7 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
           />
         )}
 
+        {/* Fields Tab */}
         {activeTab === "fields" && (
           <div className="bg-white text-black p-6 rounded-lg shadow-lg">
             <div className="flex justify-between items-center mb-4">
@@ -852,7 +895,7 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
                         {["string", "number", "date", "boolean"].includes(field.type) && (
                           <span className="text-sm text-gray-700">No extra details</span>
                         )}
-                        {/* **Display if Field is Final Amount** */}
+                        {/* Display if Field is Final Amount */}
                         {field.config && field.config.isFinalAmount && (
                           <p className="text-sm text-green-600 mt-1">Final Amount Field</p>
                         )}
@@ -967,12 +1010,12 @@ const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Contro
   );
 };
 
-// **Helper Function to Format Currency in Rupees**
+// Helper Function to Format Currency in Rupees
 const formatRupee = (amount) => {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
 };
 
-// **Helper Function to Format Date**
+// Helper Function to Format Date
 const formatDate = (dateStr) => {
   if (!dateStr) return "-";
   const date = new Date(dateStr);

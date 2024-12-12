@@ -3,10 +3,13 @@ import React, { useState, useEffect } from "react";
 import Modal from "../components/Modal";
 
 const RecordModal = ({ onClose, onSave, categories = [], fields = [], existingRecord = null }) => {
-  // Existing state variables
+  // Determine if the modal is in Edit mode
+  const isEditMode = existingRecord !== null;
+
+  // Initialize state variables
   const [error, setError] = useState("");
-  const [type, setType] = useState("revenue");
-  const [categoryId, setCategoryId] = useState("");
+  const [type, setType] = useState(isEditMode ? existingRecord.type : "revenue"); // Updated
+  const [categoryId, setCategoryId] = useState(isEditMode ? existingRecord.categoryId : "");
   const [fieldValues, setFieldValues] = useState({});
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrenceFrequency, setRecurrenceFrequency] = useState("monthly");
@@ -14,32 +17,28 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [], existingRe
   const [totalAmount, setTotalAmount] = useState("");
   const [amountPaidOrReceived, setAmountPaidOrReceived] = useState("");
 
-  // Determine if the modal is in Edit mode
-  const isEditMode = existingRecord !== null;
-
   // Filter fields based on selected record type
   const applicableFields = fields.filter(field => {
     return field.applicableTo.includes(type) || field.applicableTo.includes('both');
   });
 
-  // Initialize field values when fields or type changes
+  // Initialize field values when fields, type, or existingRecord changes
   useEffect(() => {
     const initialValues = {};
     applicableFields.forEach(field => {
       if (field.type === "dropdown" && field.options.length > 0) {
-        initialValues[field.name] = field.options[0];
+        initialValues[field.name] = isEditMode ? existingRecord.fields[field.name] || field.options[0] : field.options[0];
       } else if (field.type === "boolean") {
-        initialValues[field.name] = false;
+        initialValues[field.name] = isEditMode ? existingRecord.fields[field.name] || false : false;
       } else {
-        initialValues[field.name] = "";
+        initialValues[field.name] = isEditMode ? existingRecord.fields[field.name] || "" : "";
       }
     });
 
+    setFieldValues(initialValues);
+
+    // Handle additional fields in edit mode
     if (isEditMode) {
-      // Pre-fill with existing record data
-      for (let key in existingRecord.fields) {
-        initialValues[key] = existingRecord.fields[key];
-      }
       // Handle partial payment fields if they exist
       if (existingRecord.fields.total_amount) {
         setTotalAmount(existingRecord.fields.total_amount);
@@ -57,8 +56,6 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [], existingRe
         setIsPartialPayment(true);
       }
     }
-
-    setFieldValues(initialValues);
   }, [fields, type, existingRecord, isEditMode]);
 
   // Recalculate formula fields whenever fieldValues change
@@ -69,11 +66,11 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [], existingRe
     for (let field of applicableFields) {
       if (field.type === "formula" && field.expression) {
         const expr = field.expression;
-        
+
         // Replace field names with their numeric values
         const referencedNames = expr.match(/\b[a-zA-Z0-9_]+\b/g) || [];
         let safeExpr = expr;
-        
+
         for (let ref of referencedNames) {
           if (ref in updatedValues) {
             let val = updatedValues[ref];
@@ -254,6 +251,16 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [], existingRe
         return null;
     }
   };
+
+  // Debugging Statements
+  useEffect(() => {
+    console.log("RecordModal: existingRecord:", existingRecord);
+    console.log("RecordModal: isEditMode:", isEditMode);
+  }, [existingRecord, isEditMode]);
+
+  useEffect(() => {
+    console.log("RecordModal: fieldValues initialized:", fieldValues);
+  }, [fieldValues]);
 
   return (
     <Modal onClose={onClose}>
