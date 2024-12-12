@@ -43,6 +43,8 @@ const FinanceManagement = () => {
   const [recordTypeFilter, setRecordTypeFilter] = useState("all"); 
   // "all", "revenue", "expense"
   const [showRecordModal, setShowRecordModal] = useState(false);
+  const [editRecord, setEditRecord] = useState(null); // Record being edited
+const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Control modal visibility
 
   const token = localStorage.getItem("token");
   const orgId = localStorage.getItem("currentOrgId");
@@ -168,6 +170,84 @@ const FinanceManagement = () => {
     setTotalRevenue(totalRev);
     setTotalExpense(totalExp);
   };
+
+
+  // Inside FinanceManagement component
+
+  // Handle Edit Record
+  const handleEditRecord = (record) => {
+    setEditRecord(record);
+    setShowEditRecordModal(true);
+  };
+
+  // Handle Update Record
+  const handleUpdateRecord = async (updatedData) => {
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `http://localhost:4000/api/finance/${orgId}/components/finance/records/${updatedData.recordId}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(updatedData),
+        }
+      );
+
+      const data = await response.json();
+      if (response.ok) {
+        // Update the record in the state
+        setRecords(records.map(r => r._id === data.record._id ? data.record : r));
+        // Recompute totals
+        computeTotals();
+        // Close the modal
+        setShowEditRecordModal(false);
+      } else {
+        setError(data.message || "Failed to update the record.");
+      }
+    } catch (err) {
+      setError("Error updating the record.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Delete Record
+  const handleDeleteRecord = async (recordId) => {
+    const confirmDelete = window.confirm("Are you sure you want to delete this record?");
+    if (!confirmDelete) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `http://localhost:4000/api/finance/${orgId}/components/finance/records/${recordId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+      if (response.ok) {
+        // Remove the deleted record from the state
+        setRecords(records.filter((record) => record._id !== recordId));
+        // Recompute totals
+        computeTotals();
+      } else {
+        setError(data.message || "Failed to delete the record.");
+      }
+    } catch (err) {
+      setError("Error deleting the record.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
 
   // **Recompute Totals Whenever Records or Field Definitions Change**
   useEffect(() => {
@@ -662,43 +742,65 @@ const FinanceManagement = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRecords.map((record) => {
-                    // **Identify the Final Amount Field for Each Record**
-                    const finalAmountField = fieldDefinitions.find(
-                      f => f.config && f.config.isFinalAmount && (f.applicableTo.includes(record.type) || f.applicableTo.includes('both'))
-                    );
-                    const amount = finalAmountField ? record.fields[finalAmountField.name] : 0; // Corrected field access
+  {filteredRecords.map((record) => {
+    // Identify the Final Amount Field for Each Record
+    const finalAmountField = fieldDefinitions.find(
+      f => f.config && f.config.isFinalAmount && (f.applicableTo.includes(record.type) || f.applicableTo.includes('both'))
+    );
+    const amount = finalAmountField ? record.fields[finalAmountField.name] : 0;
 
-                    return (
-                      <tr key={record._id} className="border-t hover:bg-gray-100 transition">
-                        <td className="px-4 py-2 border align-top capitalize">{record.type}</td>
-                        <td className="px-4 py-2 border align-top">
-                          {categories.find(cat => cat._id === record.categoryId)?.name || "-"}
-                        </td>
-                        <td className="px-4 py-2 border align-top capitalize">{record.status}</td>
-                        <td className="px-4 py-2 border align-top">
-                          {formatDate(record.fields.Date)} {/* **Display Date** */}
-                        </td>
-                        <td className="px-4 py-2 border align-top">
-                          {typeof amount === 'number' ? formatRupee(amount) : "-"}
-                        </td>
-                        <td className="px-4 py-2 border align-top">
-                          <div className="flex space-x-4">
-                            <button className="text-blue-600 hover:text-blue-800 font-semibold">
-                              ✏️ Edit
-                            </button>
-                            <button className="text-red-600 hover:text-red-800 font-semibold">
-                              🗑️ Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
+    return (
+      <tr key={record._id} className="border-t hover:bg-gray-100 transition">
+        <td className="px-4 py-2 border align-top capitalize">{record.type}</td>
+        <td className="px-4 py-2 border align-top">
+          {categories.find(cat => cat._id === record.categoryId)?.name || "-"}
+        </td>
+        <td className="px-4 py-2 border align-top capitalize">{record.status}</td>
+        <td className="px-4 py-2 border align-top">
+          {formatDate(record.fields.Date)}
+        </td>
+        <td className="px-4 py-2 border align-top">
+          {typeof amount === 'number' ? formatRupee(amount) : "-"}
+        </td>
+        <td className="px-4 py-2 border align-top">
+          <div className="flex space-x-4">
+          <button
+            className="text-blue-600 hover:text-blue-800 font-semibold"
+            onClick={() => handleEditRecord(record)}
+          >
+            ✏️ Edit
+          </button>
+
+            <button
+              className="text-red-600 hover:text-red-800 font-semibold"
+              onClick={() => handleDeleteRecord(record._id)} // Updated
+            >
+              🗑️ Delete
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  })}
+</tbody>
+
               </table>
             )}
           </div>
+        )}
+
+              {/* Edit Record Modal */}
+              {showEditRecordModal && (
+          <RecordModal
+            onClose={() => {
+              setShowEditRecordModal(false);
+              setEditRecord(null);
+            }}
+            onSave={handleUpdateRecord}
+            categories={categories}
+            fields={fieldDefinitions}
+            existingRecord={editRecord}
+          />
         )}
 
         {activeTab === "fields" && (

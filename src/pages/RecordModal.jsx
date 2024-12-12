@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from "react";
 import Modal from "../components/Modal";
 
-const RecordModal = ({ onClose, onSave, categories = [], fields = [] }) => {
+const RecordModal = ({ onClose, onSave, categories = [], fields = [], existingRecord = null }) => {
+  // Existing state variables
   const [error, setError] = useState("");
   const [type, setType] = useState("revenue");
   const [categoryId, setCategoryId] = useState("");
@@ -12,6 +13,9 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [] }) => {
   const [isPartialPayment, setIsPartialPayment] = useState(false);
   const [totalAmount, setTotalAmount] = useState("");
   const [amountPaidOrReceived, setAmountPaidOrReceived] = useState("");
+
+  // Determine if the modal is in Edit mode
+  const isEditMode = existingRecord !== null;
 
   // Filter fields based on selected record type
   const applicableFields = fields.filter(field => {
@@ -30,8 +34,32 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [] }) => {
         initialValues[field.name] = "";
       }
     });
+
+    if (isEditMode) {
+      // Pre-fill with existing record data
+      for (let key in existingRecord.fields) {
+        initialValues[key] = existingRecord.fields[key];
+      }
+      // Handle partial payment fields if they exist
+      if (existingRecord.fields.total_amount) {
+        setTotalAmount(existingRecord.fields.total_amount);
+      }
+      if (existingRecord.fields.amount_paid) {
+        setAmountPaidOrReceived(existingRecord.fields.amount_paid);
+      }
+      // Handle recurrence
+      if (existingRecord.recurrence && existingRecord.recurrence.frequency !== "none") {
+        setIsRecurring(true);
+        setRecurrenceFrequency(existingRecord.recurrence.frequency);
+      }
+      // Handle partial payment
+      if (existingRecord.fields.amount_paid || existingRecord.fields.amount_received) {
+        setIsPartialPayment(true);
+      }
+    }
+
     setFieldValues(initialValues);
-  }, [fields, type]);
+  }, [fields, type, existingRecord, isEditMode]);
 
   // Recalculate formula fields whenever fieldValues change
   useEffect(() => {
@@ -143,13 +171,18 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [] }) => {
       type,
       categoryId,
       fields: finalFields,
-      recurrence: isRecurring ? { frequency: recurrenceFrequency } : {},
+      recurrence: isRecurring ? { frequency: recurrenceFrequency } : { frequency: "none" },
       status: "draft",
     };
 
     if (isPartialPayment) {
       recordData.fields["total_amount"] = Number(totalAmount);
       recordData.fields["amount_paid"] = Number(amountPaidOrReceived);
+    }
+
+    // Include recordId if editing
+    if (isEditMode) {
+      recordData.recordId = existingRecord._id;
     }
 
     onSave(recordData);
@@ -225,7 +258,7 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [] }) => {
   return (
     <Modal onClose={onClose}>
       <div className="p-6 bg-white rounded-lg shadow-lg max-w-lg mx-auto text-black z-50 relative max-h-[80vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold mb-4 text-gray-900">Add New Record</h2>
+        <h2 className="text-2xl font-bold mb-4 text-gray-900">{isEditMode ? "Edit Record" : "Add New Record"}</h2>
         {error && <p className="text-red-600 mb-4 text-sm">{error}</p>}
 
         <div className="space-y-4">
@@ -236,6 +269,7 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [] }) => {
               value={type}
               onChange={(e) => setType(e.target.value)}
               className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-400"
+              disabled={isEditMode} // Prevent changing type during edit
             >
               <option value="revenue">Revenue</option>
               <option value="expense">Expense</option>
@@ -348,7 +382,7 @@ const RecordModal = ({ onClose, onSave, categories = [], fields = [] }) => {
             className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700 transition"
             onClick={handleSave}
           >
-            Save Record
+            {isEditMode ? "Update Record" : "Save Record"}
           </button>
         </div>
       </div>
