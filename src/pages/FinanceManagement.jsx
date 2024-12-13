@@ -1,5 +1,4 @@
 // src/pages/FinanceManagement.jsx
-
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
@@ -59,6 +58,25 @@ const FinanceManagement = () => {
   const orgId = localStorage.getItem("currentOrgId");
   const navigate = useNavigate();
 
+  // Helper Function to Format Currency in Rupees
+  const formatRupee = (amount) => {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  };
+
+  // Helper Function to Format Date
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "-";
+    const date = new Date(dateStr);
+    if (isNaN(date)) return "-";
+    return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: '2-digit' }).format(date);
+  };
+
+  // Utility Function to Capitalize First Letter
+  const capitalize = (s) => {
+    if (typeof s !== 'string') return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
+
   // Filtered records based on filters
   const filteredRecords = records.filter((record) => {
     // Filter by Record Type
@@ -98,8 +116,8 @@ const FinanceManagement = () => {
           fetchCategories();
           break;
         case "records":
-          // Fetch Field Definitions and Records Concurrently
-          Promise.all([fetchFieldDefinitions(), fetchRecords()])
+          // Fetch Field Definitions, Records, and Partners Concurrently
+          Promise.all([fetchFieldDefinitions(), fetchRecords(), fetchPartners()])
             .catch(err => setError("Error fetching data for records."));
           break;
         case "fields":
@@ -116,22 +134,50 @@ const FinanceManagement = () => {
   }, [activeTab]);
 
   // Fetch Categories
-  const fetchCategories = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(
-        `http://localhost:4000/api/finance/${orgId}/components/finance/categories`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await response.json();
-      if (response.ok) setCategories(data.categories || []);
-      else setError(data.message || "Failed to fetch categories.");
-    } catch (err) {
-      setError("Error fetching categories.");
-    } finally {
-      setLoading(false);
+const fetchCategories = async () => {
+  try {
+    setLoading(true);
+    const response = await fetch(
+      `http://localhost:4000/api/finance/${orgId}/components/finance/categories`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = await response.json();
+    if (response.ok) {
+      setCategories(data.categories || []);
+      console.log("Fetched Categories:", data.categories); // Debugging
     }
-  };
+    else {
+      setError(data.message || "Failed to fetch categories.");
+    }
+  } catch (err) {
+    setError("Error fetching categories.");
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Fetch Partners
+const fetchPartners = async () => {
+  try {
+    setLoading(true);
+    const response = await fetch(
+      `http://localhost:4000/api/finance/${orgId}/components/finance/partners`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = await response.json();
+    if (response.ok) {
+      setPartners(data.partners || []);
+      console.log("Fetched Partners:", data.partners); // Debugging
+    }
+    else {
+      setError(data.message || "Failed to fetch partners.");
+    }
+  } catch (err) {
+    setError("Error fetching partners.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Fetch Records
   const fetchRecords = async () => {
@@ -169,23 +215,7 @@ const FinanceManagement = () => {
     }
   };
 
-  // Fetch Partners
-  const fetchPartners = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(
-        `http://localhost:4000/api/finance/${orgId}/components/finance/partners`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await response.json();
-      if (response.ok) setPartners(data.partners || []);
-      else setError(data.message || "Failed to fetch partners.");
-    } catch (err) {
-      setError("Error fetching partners.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  
 
   // Compute Totals based on filtered records
   useEffect(() => {
@@ -588,7 +618,7 @@ const FinanceManagement = () => {
 
   // Handle Add Record
   const handleAddRecord = (data) => {
-    // data contains { type, categoryId, fields, recurrence, status, ... }
+    // data contains { type, categoryId, partnerId, fields, recurrence, status, ... }
 
     // Make an API call to create the record
     const url = `http://localhost:4000/api/finance/${orgId}/components/finance/records`;
@@ -915,7 +945,7 @@ const FinanceManagement = () => {
                 <thead>
                   <tr className="bg-gray-200 text-left">
                     <th className="px-4 py-2 border font-semibold">Type</th>
-                    <th className="px-4 py-2 border font-semibold">Category</th>
+                    <th className="px-4 py-2 border font-semibold">Vendor/Client</th> {/* Updated Column */}
                     <th className="px-4 py-2 border font-semibold">Status</th>
                     <th className="px-4 py-2 border font-semibold">Date</th>
                     <th className="px-4 py-2 border font-semibold">Amount</th>
@@ -930,13 +960,13 @@ const FinanceManagement = () => {
                     );
                     const amount = finalAmountField ? record.fields[finalAmountField.name] : 0;
 
-                    // Find Category Name
-                    const categoryName = categories.find(cat => cat._id === record.categoryId)?.name || "-";
+                    // Find Partner Name
+                    const partnerName = record.partnerId?.name || "-";
 
                     return (
                       <tr key={record._id} className="border-t hover:bg-gray-100 transition">
                         <td className="px-4 py-2 border align-top capitalize">{record.type}</td>
-                        <td className="px-4 py-2 border align-top">{categoryName}</td>
+                        <td className="px-4 py-2 border align-top">{partnerName}</td> {/* Updated Cell */}
                         <td className="px-4 py-2 border align-top capitalize">{record.status}</td>
                         <td className="px-4 py-2 border align-top">
                           {formatDate(record.fields.Date)}
@@ -1221,6 +1251,7 @@ const FinanceManagement = () => {
             onSave={handleAddRecord}
             categories={categories} // Pass categories if needed
             fields={fieldDefinitions} // Pass fields if needed
+            partners={partners} // Pass partners for vendor/client selection
           />
         )}
 
@@ -1234,31 +1265,13 @@ const FinanceManagement = () => {
             onSave={handleUpdateRecord}
             categories={categories}
             fields={fieldDefinitions}
+            partners={partners} // Pass partners for vendor/client selection
             existingRecord={editRecord}
           />
         )}
       </div>
     </Layout>
   );
-};
-
-// Helper Function to Format Currency in Rupees
-const formatRupee = (amount) => {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-};
-
-// Helper Function to Format Date
-const formatDate = (dateStr) => {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  if (isNaN(date)) return "-";
-  return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: '2-digit' }).format(date);
-};
-
-// Utility Function to Capitalize First Letter
-const capitalize = (s) => {
-  if (typeof s !== 'string') return '';
-  return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
 export default FinanceManagement;
