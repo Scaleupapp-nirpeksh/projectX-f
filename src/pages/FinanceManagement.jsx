@@ -1,16 +1,22 @@
 // src/pages/FinanceManagement.jsx
+
 import React, { useState, useEffect } from "react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import FieldModal from "./FieldModal"; // Adjust path as needed
 import RecordModal from "./RecordModal"; 
+import PartnersModal from "./PartnersModal"; // Ensure the path is correct
 import { useNavigate } from "react-router-dom";
 
 const FinanceManagement = () => {
-  const [activeTab, setActiveTab] = useState("categories");
+  // Set default active tab to "records"
+  const [activeTab, setActiveTab] = useState("records");
+
+  // General States
   const [categories, setCategories] = useState([]);
   const [records, setRecords] = useState([]);
   const [fieldDefinitions, setFieldDefinitions] = useState([]);
+  const [partners, setPartners] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,12 +29,12 @@ const FinanceManagement = () => {
   const [toDate, setToDate] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all"); // "all" or category ID
 
-  // Category state
-  const [showModal, setShowModal] = useState(false);
+  // Category Modal States
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [categoryForm, setCategoryForm] = useState({ name: "", subCategories: [""] });
   const [editCategory, setEditCategory] = useState(null);
 
-  // Fields state
+  // Fields Modal States
   const [showFieldModal, setShowFieldModal] = useState(false);
   const [editField, setEditField] = useState(null);
   const [fieldForm, setFieldForm] = useState({
@@ -39,18 +45,21 @@ const FinanceManagement = () => {
     expression: ""
   });
 
-  // Records
+  // Partners Modal States
+  const [showPartnersModal, setShowPartnersModal] = useState(false);
+  const [editPartner, setEditPartner] = useState(null); // Partner being edited
+
+  // Records Modal States
   const [recordTypeFilter, setRecordTypeFilter] = useState("all"); 
-  // "all", "revenue", "expense"
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [editRecord, setEditRecord] = useState(null); // Record being edited
-  const [showEditRecordModal, setShowEditRecordModal] = useState(false); // Control modal visibility
+  const [showEditRecordModal, setShowEditRecordModal] = useState(false);
 
   const token = localStorage.getItem("token");
   const orgId = localStorage.getItem("currentOrgId");
   const navigate = useNavigate();
 
-  // Filtered records based on recordTypeFilter, Category, and Date Range
+  // Filtered records based on filters
   const filteredRecords = records.filter((record) => {
     // Filter by Record Type
     if (recordTypeFilter !== "all" && record.type !== recordTypeFilter) return false;
@@ -60,15 +69,14 @@ const FinanceManagement = () => {
 
     // Filter by Date Range
     if (fromDate) {
-      const recordDate = new Date(record.fields.Date); // Ensure lowercase 'date'
+      const recordDate = new Date(record.fields.Date);
       const startDate = new Date(fromDate);
       if (recordDate < startDate) return false;
     }
 
     if (toDate) {
-      const recordDate = new Date(record.fields.Date); // Ensure lowercase 'date'
+      const recordDate = new Date(record.fields.Date);
       const endDate = new Date(toDate);
-      // To include the 'toDate', set the time to end of the day
       endDate.setHours(23, 59, 59, 999);
       if (recordDate > endDate) return false;
     }
@@ -79,19 +87,29 @@ const FinanceManagement = () => {
   // Compute Profit/Loss
   const profitLoss = totalRevenue - totalExpense;
 
+  // Fetch Data Based on Active Tab
   useEffect(() => {
     if (!orgId) {
       setError("Organization ID is missing. Redirecting to organization selection...");
       setTimeout(() => navigate("/dashboard"), 3000);
     } else {
-      if (activeTab === "categories") {
-        fetchCategories();
-      } else if (activeTab === "records") {
-        // Fetch Field Definitions and Records Concurrently
-        Promise.all([fetchFieldDefinitions(), fetchRecords()])
-          .catch(err => setError("Error fetching data for records."));
-      } else if (activeTab === "fields") {
-        fetchFieldDefinitions();
+      switch(activeTab) {
+        case "categories":
+          fetchCategories();
+          break;
+        case "records":
+          // Fetch Field Definitions and Records Concurrently
+          Promise.all([fetchFieldDefinitions(), fetchRecords()])
+            .catch(err => setError("Error fetching data for records."));
+          break;
+        case "fields":
+          fetchFieldDefinitions();
+          break;
+        case "partners":
+          fetchPartners();
+          break;
+        default:
+          break;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,7 +117,6 @@ const FinanceManagement = () => {
 
   // Fetch Categories
   const fetchCategories = async () => {
-    if (!orgId) return;
     try {
       setLoading(true);
       const response = await fetch(
@@ -118,7 +135,6 @@ const FinanceManagement = () => {
 
   // Fetch Records
   const fetchRecords = async () => {
-    if (!orgId) return;
     try {
       setLoading(true);
       const response = await fetch(
@@ -137,7 +153,6 @@ const FinanceManagement = () => {
 
   // Fetch Field Definitions
   const fetchFieldDefinitions = async () => {
-    if (!orgId) return;
     try {
       setLoading(true);
       const response = await fetch(
@@ -154,7 +169,32 @@ const FinanceManagement = () => {
     }
   };
 
+  // Fetch Partners
+  const fetchPartners = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `http://localhost:4000/api/finance/${orgId}/components/finance/partners`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json();
+      if (response.ok) setPartners(data.partners || []);
+      else setError(data.message || "Failed to fetch partners.");
+    } catch (err) {
+      setError("Error fetching partners.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Compute Totals based on filtered records
+  useEffect(() => {
+    if (activeTab === "records") {
+      computeTotals(filteredRecords);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRecords, fieldDefinitions, activeTab]);
+
   const computeTotals = (recordsToCompute) => {
     if (fieldDefinitions.length === 0 || recordsToCompute.length === 0) {
       setTotalRevenue(0);
@@ -197,14 +237,6 @@ const FinanceManagement = () => {
     setTotalRevenue(totalRev);
     setTotalExpense(totalExp);
   };
-
-  // Recompute Totals Whenever filteredRecords or Field Definitions Change
-  useEffect(() => {
-    if (activeTab === "records") {
-      computeTotals(filteredRecords);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecords, fieldDefinitions, activeTab]);
 
   // Handle Edit Record
   const handleEditRecord = (record) => {
@@ -284,8 +316,8 @@ const FinanceManagement = () => {
   };
 
   // Category Modal Handlers
-  const handleModalClose = () => {
-    setShowModal(false);
+  const handleCategoryModalClose = () => {
+    setShowCategoryModal(false);
     setEditCategory(null);
     setCategoryForm({ name: "", subCategories: [""] });
   };
@@ -328,7 +360,7 @@ const FinanceManagement = () => {
         setCategories([...categories, data.category]);
       }
 
-      handleModalClose();
+      handleCategoryModalClose();
       // Optionally, display a success message
       alert("Category saved successfully.");
     } catch (err) {
@@ -366,7 +398,7 @@ const FinanceManagement = () => {
       name: category.name,
       subCategories: category.subCategories || [""],
     });
-    setShowModal(true);
+    setShowCategoryModal(true);
   };
 
   const handleSubCategoryChange = (index, value) => {
@@ -467,11 +499,94 @@ const FinanceManagement = () => {
     });
   };
 
-  // Record Modal Handlers
-  const handleRecordModalClose = () => {
-    setShowRecordModal(false);
+  // Partners Modal Handlers
+  const handlePartnersModalClose = () => {
+    setShowPartnersModal(false);
+    setEditPartner(null);
   };
 
+  const handleAddOrUpdatePartner = async (partnerData) => {
+    try {
+      setLoading(true);
+      const method = partnerData.partnerId ? "PUT" : "POST";
+      const url = partnerData.partnerId
+        ? `http://localhost:4000/api/finance/${orgId}/components/finance/partners/${partnerData.partnerId}`
+        : `http://localhost:4000/api/finance/${orgId}/components/finance/partners`;
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(partnerData),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data.message || "Failed to save partner.");
+        alert(data.message || "Failed to save partner.");
+        return;
+      }
+
+      const data = await response.json();
+      if (data.partner) {
+        if (partnerData.partnerId) {
+          // Update existing partner
+          setPartners(partners.map(p => p._id === data.partner._id ? data.partner : p));
+          alert("Partner updated successfully.");
+        } else {
+          // Add new partner
+          setPartners([...partners, data.partner]);
+          alert("Partner added successfully.");
+        }
+        handlePartnersModalClose();
+      } else {
+        setError(data.message || "Failed to save partner.");
+      }
+    } catch (err) {
+      setError("Error saving partner.");
+      alert("Error saving partner.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePartner = async (partnerId) => {
+    const confirmDelete = window.confirm("Are you sure you want to delete this partner?");
+    if (!confirmDelete) return;
+
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `http://localhost:4000/api/finance/${orgId}/components/finance/partners/${partnerId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+      if (response.ok) {
+        // Remove the deleted partner from the state
+        setPartners(partners.filter((partner) => partner._id !== partnerId));
+        // Optionally, display a success message
+        alert("Partner deleted successfully.");
+      } else {
+        setError(data.message || "Failed to delete the partner.");
+        alert(data.message || "Failed to delete the partner.");
+      }
+    } catch (err) {
+      setError("Error deleting the partner.");
+      alert("Error deleting the partner.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Add Record
   const handleAddRecord = (data) => {
     // data contains { type, categoryId, fields, recurrence, status, ... }
 
@@ -506,21 +621,9 @@ const FinanceManagement = () => {
     });
   };
 
-  // Handle Update Record (Already Provided Above)
-
-  // Handle Delete Record (Already Provided Above)
-
-  // Helper Function to Format Currency in Rupees
-  const formatRupee = (amount) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-  };
-
-  // Helper Function to Format Date
-  const formatDate = (dateStr) => {
-    if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    if (isNaN(date)) return "-";
-    return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: '2-digit' }).format(date);
+  // Handle Record Modal Close
+  const handleRecordModalClose = () => {
+    setShowRecordModal(false);
   };
 
   return (
@@ -528,7 +631,7 @@ const FinanceManagement = () => {
       <div className="min-h-screen bg-gradient-to-r from-blue-500 to-purple-500 text-white p-8">
         <h1 className="text-4xl font-extrabold text-center mb-2">Finance Management</h1>
         <p className="text-center mb-8 text-lg">
-          Manage your finance categories, records, and fields efficiently.
+          Manage your finance categories, records, fields, and partners efficiently.
         </p>
 
         {error && <p className="text-red-500 text-center mb-4">{error}</p>}
@@ -551,6 +654,7 @@ const FinanceManagement = () => {
                 : "bg-white text-blue-700 hover:bg-gray-100"
             }`}
             onClick={() => setActiveTab("categories")}
+            aria-label="Categories Tab"
           >
             Categories
           </button>
@@ -561,6 +665,7 @@ const FinanceManagement = () => {
                 : "bg-white text-blue-700 hover:bg-gray-100"
             }`}
             onClick={() => setActiveTab("records")}
+            aria-label="Records Tab"
           >
             Records
           </button>
@@ -571,8 +676,20 @@ const FinanceManagement = () => {
                 : "bg-white text-blue-700 hover:bg-gray-100"
             }`}
             onClick={() => setActiveTab("fields")}
+            aria-label="Fields Tab"
           >
             Fields
+          </button>
+          <button
+            className={`px-6 py-2 rounded font-semibold transition ${
+              activeTab === "partners"
+                ? "bg-blue-700 text-white"
+                : "bg-white text-blue-700 hover:bg-gray-100"
+            }`}
+            onClick={() => setActiveTab("partners")}
+            aria-label="Partners Tab"
+          >
+            Partners
           </button>
         </div>
 
@@ -584,10 +701,11 @@ const FinanceManagement = () => {
               <button
                 className="bg-green-600 px-4 py-2 rounded text-white font-semibold hover:bg-green-700 transition"
                 onClick={() => {
-                  setShowModal(true);
+                  setShowCategoryModal(true);
                   setEditCategory(null);
                   setCategoryForm({ name: "", subCategories: [""] });
                 }}
+                aria-label="Add Category"
               >
                 Add Category
               </button>
@@ -623,12 +741,14 @@ const FinanceManagement = () => {
                           <button
                             className="text-blue-600 hover:text-blue-800 font-semibold"
                             onClick={() => handleEditCategory(category)}
+                            aria-label={`Edit Category ${category.name}`}
                           >
                             ✏️ Edit
                           </button>
                           <button
                             className="text-red-600 hover:text-red-800 font-semibold"
                             onClick={() => handleDeleteCategory(category._id)}
+                            aria-label={`Delete Category ${category.name}`}
                           >
                             🗑️ Delete
                           </button>
@@ -647,12 +767,22 @@ const FinanceManagement = () => {
           <div className="bg-white text-black p-6 rounded-lg shadow-lg">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold">Records</h2>
-              <button
-                className="bg-green-600 px-4 py-2 rounded text-white font-semibold hover:bg-green-700 transition"
-                onClick={() => setShowRecordModal(true)}
-              >
-                Add Record
-              </button>
+              <div className="flex space-x-4">
+                <button
+                  className="bg-green-600 px-4 py-2 rounded text-white font-semibold hover:bg-green-700 transition"
+                  onClick={() => setShowRecordModal(true)}
+                  aria-label="Add Record"
+                >
+                  Add Record
+                </button>
+                <button
+                  className="bg-purple-600 px-4 py-2 rounded text-white font-semibold hover:bg-purple-700 transition"
+                  onClick={() => setShowPartnersModal(true)}
+                  aria-label="Add Partner"
+                >
+                  Add Partner
+                </button>
+              </div>
             </div>
 
             {/* Display Total Revenue, Total Expenses, and Profit/Loss */}
@@ -697,6 +827,7 @@ const FinanceManagement = () => {
                   className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
+                  aria-label="From Date Filter"
                 />
               </div>
               <div className="flex flex-col mb-4 md:mb-0">
@@ -706,6 +837,7 @@ const FinanceManagement = () => {
                   className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
+                  aria-label="To Date Filter"
                 />
               </div>
               {/* Category Filter */}
@@ -715,6 +847,7 @@ const FinanceManagement = () => {
                   className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
+                  aria-label="Category Filter"
                 >
                   <option value="all">All Categories</option>
                   {categories.map((category) => (
@@ -736,6 +869,7 @@ const FinanceManagement = () => {
                   setRecordTypeFilter("all");
                   setSelectedCategory("all");
                 }}
+                aria-label="Clear All Filters"
               >
                 Clear All Filters
               </button>
@@ -749,6 +883,7 @@ const FinanceManagement = () => {
                     recordTypeFilter === "all" ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
                   }`}
                   onClick={() => setRecordTypeFilter("all")}
+                  aria-label="Filter All Records"
                 >
                   All
                 </button>
@@ -757,6 +892,7 @@ const FinanceManagement = () => {
                     recordTypeFilter === "revenue" ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
                   }`}
                   onClick={() => setRecordTypeFilter("revenue")}
+                  aria-label="Filter Revenue Records"
                 >
                   Revenue
                 </button>
@@ -765,6 +901,7 @@ const FinanceManagement = () => {
                     recordTypeFilter === "expense" ? "bg-blue-600 text-white" : "bg-gray-200 text-black"
                   }`}
                   onClick={() => setRecordTypeFilter("expense")}
+                  aria-label="Filter Expense Records"
                 >
                   Expense
                 </button>
@@ -780,7 +917,7 @@ const FinanceManagement = () => {
                     <th className="px-4 py-2 border font-semibold">Type</th>
                     <th className="px-4 py-2 border font-semibold">Category</th>
                     <th className="px-4 py-2 border font-semibold">Status</th>
-                    <th className="px-4 py-2 border font-semibold">Date</th> {/* Added Date Column */}
+                    <th className="px-4 py-2 border font-semibold">Date</th>
                     <th className="px-4 py-2 border font-semibold">Amount</th>
                     <th className="px-4 py-2 border font-semibold">Actions</th>
                   </tr>
@@ -793,15 +930,16 @@ const FinanceManagement = () => {
                     );
                     const amount = finalAmountField ? record.fields[finalAmountField.name] : 0;
 
+                    // Find Category Name
+                    const categoryName = categories.find(cat => cat._id === record.categoryId)?.name || "-";
+
                     return (
                       <tr key={record._id} className="border-t hover:bg-gray-100 transition">
                         <td className="px-4 py-2 border align-top capitalize">{record.type}</td>
-                        <td className="px-4 py-2 border align-top">
-                          {categories.find(cat => cat._id === record.categoryId)?.name || "-"}
-                        </td>
+                        <td className="px-4 py-2 border align-top">{categoryName}</td>
                         <td className="px-4 py-2 border align-top capitalize">{record.status}</td>
                         <td className="px-4 py-2 border align-top">
-                          {formatDate(record.fields.Date)} {/* Ensure lowercase 'date' */}
+                          {formatDate(record.fields.Date)}
                         </td>
                         <td className="px-4 py-2 border align-top">
                           {typeof amount === 'number' ? formatRupee(amount) : "-"}
@@ -811,12 +949,14 @@ const FinanceManagement = () => {
                             <button
                               className="text-blue-600 hover:text-blue-800 font-semibold"
                               onClick={() => handleEditRecord(record)}
+                              aria-label={`Edit Record ${record._id}`}
                             >
                               ✏️ Edit
                             </button>
                             <button
                               className="text-red-600 hover:text-red-800 font-semibold"
                               onClick={() => handleDeleteRecord(record._id)}
+                              aria-label={`Delete Record ${record._id}`}
                             >
                               🗑️ Delete
                             </button>
@@ -831,20 +971,6 @@ const FinanceManagement = () => {
           </div>
         )}
 
-        {/* Edit Record Modal */}
-        {showEditRecordModal && (
-          <RecordModal
-            onClose={() => {
-              setShowEditRecordModal(false);
-              setEditRecord(null);
-            }}
-            onSave={handleUpdateRecord}
-            categories={categories}
-            fields={fieldDefinitions}
-            existingRecord={editRecord}
-          />
-        )}
-
         {/* Fields Tab */}
         {activeTab === "fields" && (
           <div className="bg-white text-black p-6 rounded-lg shadow-lg">
@@ -857,6 +983,7 @@ const FinanceManagement = () => {
                   setEditField(null);
                   setFieldForm({ name: "", label: "", type: "string", options: [], expression: "" });
                 }}
+                aria-label="Add Field Definition"
               >
                 Add Field Definition
               </button>
@@ -880,19 +1007,17 @@ const FinanceManagement = () => {
                     <tr key={field._id} className="border-t hover:bg-gray-100 transition">
                       <td className="px-4 py-2 border align-top">{field.name}</td>
                       <td className="px-4 py-2 border align-top">{field.label || "-"}</td>
-                      <td className="px-4 py-2 border align-top">{field.type}</td>
+                      <td className="px-4 py-2 border align-top">{capitalize(field.type)}</td>
                       <td className="px-4 py-2 border align-top">
-                        {field.type === "dropdown" && field.options.length > 0 && (
+                        {field.type === "dropdown" && field.options.length > 0 ? (
                           <ul className="list-disc pl-5">
                             {field.options.map((opt, i) => (
                               <li key={i}>{opt}</li>
                             ))}
                           </ul>
-                        )}
-                        {field.type === "formula" && field.expression && (
+                        ) : field.type === "formula" && field.expression ? (
                           <p className="text-sm italic">Expr: {field.expression}</p>
-                        )}
-                        {["string", "number", "date", "boolean"].includes(field.type) && (
+                        ) : (
                           <span className="text-sm text-gray-700">No extra details</span>
                         )}
                         {/* Display if Field is Final Amount */}
@@ -905,12 +1030,14 @@ const FinanceManagement = () => {
                           <button
                             className="text-blue-600 hover:text-blue-800 font-semibold"
                             onClick={() => handleEditField(field)}
+                            aria-label={`Edit Field ${field.name}`}
                           >
                             ✏️ Edit
                           </button>
                           <button
                             className="text-red-600 hover:text-red-800 font-semibold"
                             onClick={() => handleDeleteField(field._id)}
+                            aria-label={`Delete Field ${field.name}`}
                           >
                             🗑️ Delete
                           </button>
@@ -924,9 +1051,85 @@ const FinanceManagement = () => {
           </div>
         )}
 
-        {/* Modal for Categories */}
-        {showModal && (
-          <Modal onClose={handleModalClose}>
+        {/* Partners Tab */}
+        {activeTab === "partners" && (
+          <div className="bg-white text-black p-6 rounded-lg shadow-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold">Partners</h2>
+              <button
+                className="bg-green-600 px-4 py-2 rounded text-white font-semibold hover:bg-green-700 transition"
+                onClick={() => {
+                  setShowPartnersModal(true);
+                  setEditPartner(null);
+                }}
+                aria-label="Add Partner"
+              >
+                Add Partner
+              </button>
+            </div>
+
+            {partners.length === 0 ? (
+              <p className="text-gray-700">No partners found. Add a new partner to get started.</p>
+            ) : (
+              <table className="table-auto w-full bg-white text-black rounded-lg">
+                <thead>
+                  <tr className="bg-gray-200 text-left">
+                    <th className="px-4 py-2 border font-semibold">Name</th>
+                    <th className="px-4 py-2 border font-semibold">Type</th>
+                    <th className="px-4 py-2 border font-semibold">Contact Info</th>
+                    <th className="px-4 py-2 border font-semibold">Category</th>
+                    <th className="px-4 py-2 border font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {partners.map((partner) => (
+                    <tr key={partner._id} className="border-t hover:bg-gray-100 transition">
+                      <td className="px-4 py-2 border align-top">{partner.name}</td>
+                      <td className="px-4 py-2 border align-top capitalize">{partner.type}</td>
+                      <td className="px-4 py-2 border align-top">
+                        {partner.contactInfo.email && <p>Email: {partner.contactInfo.email}</p>}
+                        {partner.contactInfo.phone && <p>Phone: {partner.contactInfo.phone}</p>}
+                        {partner.contactInfo.address && <p>Address: {partner.contactInfo.address}</p>}
+                      </td>
+                      <td className="px-4 py-2 border align-top">
+                        {partner.categoryId ? (
+                          <span>{partner.categoryId.name}</span> // Assuming category is populated
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-2 border align-top">
+                        <div className="flex space-x-4">
+                          <button
+                            className="text-blue-600 hover:text-blue-800 font-semibold"
+                            onClick={() => {
+                              setEditPartner(partner);
+                              setShowPartnersModal(true);
+                            }}
+                            aria-label={`Edit Partner ${partner.name}`}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            className="text-red-600 hover:text-red-800 font-semibold"
+                            onClick={() => handleDeletePartner(partner._id)}
+                            aria-label={`Delete Partner ${partner.name}`}
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* Category Modal */}
+        {showCategoryModal && (
+          <Modal onClose={handleCategoryModalClose}>
             <div className="p-6 bg-white rounded-lg shadow-lg max-w-lg mx-auto text-black z-50 relative">
               <h2 className="text-xl font-bold mb-4">
                 {editCategory ? "Edit Category" : "Add Category"}
@@ -938,6 +1141,7 @@ const FinanceManagement = () => {
                   className="w-full p-2 border rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
                   value={categoryForm.name}
                   onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  aria-label="Category Name Input"
                 />
 
                 <label className="block text-sm font-semibold mb-2">Sub-Categories</label>
@@ -948,11 +1152,13 @@ const FinanceManagement = () => {
                       className="flex-grow p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                       value={sub}
                       onChange={(e) => handleSubCategoryChange(index, e.target.value)}
+                      aria-label={`Sub-Category ${index + 1} Input`}
                     />
                     {categoryForm.subCategories.length > 1 && (
                       <button
                         className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition"
                         onClick={() => removeSubCategoryField(index)}
+                        aria-label={`Remove Sub-Category ${index + 1}`}
                       >
                         Remove
                       </button>
@@ -962,6 +1168,7 @@ const FinanceManagement = () => {
                 <button
                   className="mt-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition font-semibold"
                   onClick={addSubCategoryField}
+                  aria-label="Add Sub-Category"
                 >
                   Add Sub-Category
                 </button>
@@ -970,13 +1177,15 @@ const FinanceManagement = () => {
               <div className="flex justify-end mt-4 space-x-3 border-t border-gray-200 pt-4">
                 <button
                   className="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400 transition"
-                  onClick={handleModalClose}
+                  onClick={handleCategoryModalClose}
+                  aria-label="Cancel Add/Edit Category"
                 >
                   Cancel
                 </button>
                 <button
                   className="bg-green-600 text-white px-4 py-2 rounded font-semibold hover:bg-green-700 transition"
                   onClick={handleAddOrUpdateCategory}
+                  aria-label="Save Category"
                 >
                   Save
                 </button>
@@ -985,13 +1194,23 @@ const FinanceManagement = () => {
           </Modal>
         )}
 
-        {/* Field Modal */}
+        {/* Fields Modal */}
         {showFieldModal && (
           <FieldModal
             onClose={handleFieldModalClose}
             onSave={handleFieldSave}
             editField={editField}
             fields={fieldDefinitions}
+          />
+        )}
+
+        {/* Partners Modal */}
+        {showPartnersModal && (
+          <PartnersModal
+            onClose={handlePartnersModalClose}
+            onSave={handleAddOrUpdatePartner}
+            categories={categories} // Pass categories for category selection
+            existingPartner={editPartner} // Pass existing partner data if editing
           />
         )}
 
@@ -1005,6 +1224,19 @@ const FinanceManagement = () => {
           />
         )}
 
+        {/* Edit Record Modal */}
+        {showEditRecordModal && (
+          <RecordModal
+            onClose={() => {
+              setShowEditRecordModal(false);
+              setEditRecord(null);
+            }}
+            onSave={handleUpdateRecord}
+            categories={categories}
+            fields={fieldDefinitions}
+            existingRecord={editRecord}
+          />
+        )}
       </div>
     </Layout>
   );
@@ -1021,6 +1253,12 @@ const formatDate = (dateStr) => {
   const date = new Date(dateStr);
   if (isNaN(date)) return "-";
   return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: '2-digit' }).format(date);
+};
+
+// Utility Function to Capitalize First Letter
+const capitalize = (s) => {
+  if (typeof s !== 'string') return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
 export default FinanceManagement;
